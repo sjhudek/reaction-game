@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reflex — Reaction Timer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+/* ── Design Tokens ── */
+:root {
+  --bg:#0F172A;--surface:#1E293B;
+  --primary:#3B82F6;--primary-hover:#2563EB;
+  --success:#10B981;--success-glow:rgba(16,185,129,0.3);
+  --error:#EF4444;--error-glow:rgba(239,68,68,0.25);
+  --highlight:#F59E0B;--highlight-glow:rgba(245,158,11,0.2);
+  --text:#F8FAFC;--text-secondary:#94A3B8;--text-dim:#64748B;
+  --border:rgba(148,163,184,0.1);
+  --font-sans:'Inter',system-ui,-apple-system,sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+  --radius-sm:8px;--radius-md:12px;--radius-lg:16px;--radius-xl:24px;
+  --ease-out:cubic-bezier(0.22,1,0.36,1);
+  --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* ── Reset ── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font-sans);background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;overflow-x:hidden}
+:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:4px}
+kbd{display:inline-block;padding:2px 8px;font-family:var(--font-mono);font-size:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text-secondary)}
+
+/* ── Layout ── */
+.app{display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:1.5rem;position:relative}
+
+/* ── Ambient floating particles (pure CSS) ── */
+.particles{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.particle{position:absolute;width:3px;height:3px;background:var(--primary);border-radius:50%;opacity:0;animation:floatUp linear infinite}
+@keyframes floatUp{
+  0%{transform:translateY(100vh) scale(0);opacity:0}
+  10%{opacity:0.3}
+  90%{opacity:0.15}
+  100%{transform:translateY(-10vh) scale(1);opacity:0}
+}
+
+.header,.main,.footer{position:relative;z-index:1;width:100%;max-width:800px}
+
+/* ── Header ── */
+.header{display:flex;align-items:center;justify-content:space-between;padding:.5rem 0 1.5rem}
+.header__brand{display:flex;align-items:center;gap:.625rem}
+.header__title{font-size:1.35rem;font-weight:700;letter-spacing:-.02em}
+.header__dot{width:10px;height:10px;border-radius:50%;background:var(--primary);box-shadow:0 0 12px rgba(59,130,246,0.5);display:inline-block}
+.header__subtitle{font-size:.8rem;font-weight:500;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em}
+
+/* ── Arena ── */
+.arena{position:relative;width:100%;aspect-ratio:16/9;min-height:300px;max-height:460px;background:var(--surface);border-radius:var(--radius-xl);border:1px solid var(--border);overflow:hidden;cursor:default;transition:box-shadow .5s var(--ease-out),border-color .5s var(--ease-out)}
+.arena--waiting{border-color:rgba(59,130,246,0.3);box-shadow:0 0 40px rgba(59,130,246,0.08)}
+.arena--go{border-color:rgba(16,185,129,0.5);box-shadow:0 0 80px var(--success-glow),inset 0 0 80px rgba(16,185,129,0.04);cursor:pointer}
+.arena--early{border-color:rgba(239,68,68,0.4);box-shadow:0 0 50px var(--error-glow)}
+.arena--result{border-color:rgba(59,130,246,0.2)}
+
+/* ── 3D Shape (CSS) ── */
+.scene3d{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;perspective:600px;z-index:0}
+.shape-wrap{width:140px;height:140px;position:relative;transform-style:preserve-3d;animation:shapeOrbit 12s linear infinite}
+.shape-wrap.idle .shape-face{background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.35)}
+.shape-wrap.waiting .shape-face{background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.2)}
+.shape-wrap.go .shape-face{background:rgba(16,185,129,0.18);border-color:rgba(16,185,129,0.6);box-shadow:0 0 30px rgba(16,185,129,0.3)}
+.shape-wrap.early .shape-face{background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.5)}
+.shape-wrap.result .shape-face{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.25)}
+.shape-face{position:absolute;width:100%;height:100%;border:1.5px solid rgba(59,130,246,0.35);background:rgba(59,130,246,0.08);border-radius:12px;transition:background .6s,border-color .6s,box-shadow .6s;backdrop-filter:blur(2px)}
+.face-front {transform:translateZ(70px)}
+.face-back  {transform:rotateY(180deg) translateZ(70px)}
+.face-left  {transform:rotateY(-90deg) translateZ(70px)}
+.face-right {transform:rotateY(90deg) translateZ(70px)}
+.face-top   {transform:rotateX(90deg) translateZ(70px)}
+.face-bottom{transform:rotateX(-90deg) translateZ(70px)}
+
+/* Inner diamond */
+.inner-shape{position:absolute;width:50px;height:50px;top:50%;left:50%;margin:-25px 0 0 -25px;transform-style:preserve-3d;animation:innerSpin 8s linear infinite reverse}
+.inner-face{position:absolute;width:100%;height:100%;border:1px solid rgba(59,130,246,0.25);background:rgba(59,130,246,0.06);border-radius:6px;transition:background .6s,border-color .6s}
+.inner-front {transform:rotateY(0deg)   translateZ(25px)}
+.inner-back  {transform:rotateY(180deg) translateZ(25px)}
+.inner-left  {transform:rotateY(-90deg) translateZ(25px)}
+.inner-right {transform:rotateY(90deg)  translateZ(25px)}
+.inner-top   {transform:rotateX(90deg)  translateZ(25px)}
+.inner-bottom{transform:rotateX(-90deg) translateZ(25px)}
+.shape-wrap.go .inner-face{background:rgba(16,185,129,0.25);border-color:rgba(16,185,129,0.6)}
+.shape-wrap.early .inner-face{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.5)}
+
+/* Orbital ring */
+.orbit-ring{position:absolute;width:200px;height:200px;top:50%;left:50%;margin:-100px 0 0 -100px;border:1px solid rgba(59,130,246,0.12);border-radius:50%;transform-style:preserve-3d;transform:rotateX(70deg);animation:ringRotate 10s linear infinite;transition:border-color .6s}
+.orbit-ring2{animation-duration:14s;animation-direction:reverse;transform:rotateX(70deg) rotateY(30deg);width:170px;height:170px;margin:-85px 0 0 -85px}
+.shape-wrap.go ~ .orbit-ring,.shape-wrap.go ~ .orbit-ring2{border-color:rgba(16,185,129,0.25)}
+.shape-wrap.early ~ .orbit-ring,.shape-wrap.early ~ .orbit-ring2{border-color:rgba(239,68,68,0.15)}
+
+/* Glow core */
+.glow-core{position:absolute;width:30px;height:30px;top:50%;left:50%;margin:-15px 0 0 -15px;border-radius:50%;background:radial-gradient(circle,rgba(59,130,246,0.4),transparent 70%);transition:background .6s,transform .6s var(--ease-spring);z-index:2}
+.glow-core.go{background:radial-gradient(circle,rgba(16,185,129,0.6),transparent 70%);transform:scale(3)}
+.glow-core.early{background:radial-gradient(circle,rgba(239,68,68,0.5),transparent 70%);transform:scale(1.5)}
+.glow-core.waiting{transform:scale(0.6)}
+
+@keyframes shapeOrbit{0%{transform:rotateX(0deg) rotateY(0deg)}100%{transform:rotateX(360deg) rotateY(360deg)}}
+@keyframes innerSpin{0%{transform:rotateY(0deg) rotateZ(0deg)}100%{transform:rotateY(360deg) rotateZ(360deg)}}
+@keyframes ringRotate{0%{transform:rotateX(70deg) rotateZ(0deg)}100%{transform:rotateX(70deg) rotateZ(360deg)}}
+
+/* Scale states */
+.shape-wrap.go{animation-duration:3s}
+.shape-wrap.waiting{animation-duration:20s}
+
+/* ── Overlay States ── */
+.arena__overlay{position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.arena__overlay .btn{pointer-events:auto}
+.state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:2rem;gap:.75rem;animation:fadeIn .35s var(--ease-out)}
+.hidden{display:none!important}
+.state__title{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.state__title--error{color:var(--error)}
+.state__desc{font-size:.95rem;color:var(--text-secondary);max-width:340px;line-height:1.6}
+.text-green{color:var(--success);font-weight:600}
+.state__hint{font-size:.8rem;color:var(--text-dim);margin-top:.25rem}
+.state__label{font-size:1.5rem;font-weight:600;color:var(--text-secondary);letter-spacing:.02em;animation:pulse 1.5s ease-in-out infinite}
+.state__sublabel{font-size:.875rem;color:var(--text-dim)}
+.state__label--go{font-size:2rem;font-weight:700;color:var(--success);animation:scaleIn .25s var(--ease-spring);text-shadow:0 0 30px var(--success-glow)}
+
+/* ── Result ── */
+.result__label{font-size:.875rem;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em}
+.result__time{display:flex;align-items:baseline;gap:.35rem}
+.result__ms{font-family:var(--font-mono);font-size:3.5rem;font-weight:700;line-height:1;letter-spacing:-.03em;color:var(--text);animation:countUp .3s var(--ease-out)}
+.result__unit{font-family:var(--font-mono);font-size:1.25rem;font-weight:400;color:var(--text-dim)}
+.result__badge{font-size:.9rem;font-weight:600;color:var(--highlight);padding:.35rem 1rem;background:var(--highlight-glow);border-radius:999px;animation:badgePop .4s var(--ease-spring)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-sans);font-size:.95rem;font-weight:600;padding:.7rem 2rem;border:none;border-radius:var(--radius-md);cursor:pointer;transition:all .2s var(--ease-out);user-select:none;-webkit-tap-highlight-color:transparent}
+.btn--primary{background:var(--primary);color:#fff;box-shadow:0 2px 12px rgba(59,130,246,0.3)}
+.btn--primary:hover{background:var(--primary-hover);box-shadow:0 4px 20px rgba(59,130,246,0.4);transform:translateY(-1px)}
+.btn--primary:active{transform:translateY(0)}
+.btn--lg{font-size:1.05rem;padding:.85rem 2.5rem;border-radius:var(--radius-lg)}
+
+/* ── Stats ── */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-top:1.25rem;width:100%}
+.stats__card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem 1.25rem;text-align:center;transition:border-color .3s}
+.stats__card:hover{border-color:rgba(148,163,184,0.2)}
+.stats__card--best{position:relative;overflow:hidden}
+.stats__card--best::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--highlight),transparent);opacity:0;transition:opacity .4s}
+.stats__card--best.has-best::before{opacity:1}
+.stats__card--history{grid-column:1/-1}
+.stats__heading{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--text-dim);margin-bottom:.5rem}
+.stats__value{font-family:var(--font-mono);font-size:1.75rem;font-weight:700;color:var(--text);letter-spacing:-.02em;line-height:1.2}
+.stats__value--best{color:var(--highlight)}
+.stats__unit{font-size:.75rem;color:var(--text-dim)}
+
+/* ── History ── */
+.history{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center}
+.history__empty{font-size:.85rem;color:var(--text-dim);font-style:italic}
+.history__item{font-family:var(--font-mono);font-size:.85rem;font-weight:500;padding:.35rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-secondary);animation:fadeIn .3s var(--ease-out)}
+.history__item--best{color:var(--highlight);border-color:rgba(245,158,11,0.3);background:var(--highlight-glow)}
+.history__item--early{color:var(--error);border-color:rgba(239,68,68,0.2);font-family:var(--font-sans);font-weight:500;font-style:italic}
+
+/* ── Footer ── */
+.footer{margin-top:auto;padding:2rem 0 .5rem;text-align:center;font-size:.8rem;color:var(--text-dim)}
+
+/* ── Animations ── */
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes countUp{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+@keyframes badgePop{0%{opacity:0;transform:scale(.5)}70%{transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
+
+/* ── Responsive ── */
+@media(max-width:640px){
+  .app{padding:1rem}
+  .header{flex-direction:column;align-items:flex-start;gap:.15rem;padding-bottom:1rem}
+  .header__subtitle{display:none}
+  .arena{aspect-ratio:4/3;min-height:260px;border-radius:var(--radius-lg)}
+  .shape-wrap{width:100px;height:100px}
+  .face-front{transform:translateZ(50px)}.face-back{transform:rotateY(180deg) translateZ(50px)}
+  .face-left{transform:rotateY(-90deg) translateZ(50px)}.face-right{transform:rotateY(90deg) translateZ(50px)}
+  .face-top{transform:rotateX(90deg) translateZ(50px)}.face-bottom{transform:rotateX(-90deg) translateZ(50px)}
+  .orbit-ring{width:150px;height:150px;margin:-75px 0 0 -75px}
+  .orbit-ring2{width:130px;height:130px;margin:-65px 0 0 -65px}
+  .state__title{font-size:1.25rem}.state__desc{font-size:.85rem}
+  .state__label--go{font-size:1.5rem}.result__ms{font-size:2.5rem}
+  .stats{grid-template-columns:1fr 1fr;gap:.5rem}
+  .stats__card:nth-child(3){grid-column:1/-1}
+  .stats__value{font-size:1.4rem}
+  .btn--lg{font-size:.95rem;padding:.75rem 2rem}
+}
+@media(max-width:380px){.result__ms{font-size:2rem}.arena{min-height:220px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <div id="app" class="app">
+
+    <!-- Ambient particles (CSS only) -->
+    <div class="particles" id="particles" aria-hidden="true"></div>
+
+    <header class="header">
+      <div class="header__brand">
+        <span class="header__dot"></span>
+        <h1 class="header__title">Reflex</h1>
+      </div>
+      <p class="header__subtitle">Reaction Timer</p>
+    </header>
+
+    <main class="main">
+      <section class="arena" id="arena" aria-label="Game arena" role="region">
+
+        <!-- CSS 3D Shape -->
+        <div class="scene3d">
+          <div class="shape-wrap idle" id="shape">
+            <div class="shape-face face-front"></div>
+            <div class="shape-face face-back"></div>
+            <div class="shape-face face-left"></div>
+            <div class="shape-face face-right"></div>
+            <div class="shape-face face-top"></div>
+            <div class="shape-face face-bottom"></div>
+            <div class="inner-shape">
+              <div class="inner-face inner-front"></div>
+              <div class="inner-face inner-back"></div>
+              <div class="inner-face inner-left"></div>
+              <div class="inner-face inner-right"></div>
+              <div class="inner-face inner-top"></div>
+              <div class="inner-face inner-bottom"></div>
+            </div>
+          </div>
+          <div class="glow-core" id="glow"></div>
+          <div class="orbit-ring"></div>
+          <div class="orbit-ring orbit-ring2"></div>
+        </div>
+
+        <!-- Overlay States -->
+        <div class="arena__overlay">
+          <!-- Idle -->
+          <div class="state" id="state-idle">
+            <h2 class="state__title">Test Your Reflexes</h2>
+            <p class="state__desc">Press <strong>Start</strong>, then wait for the shape to turn <span class="text-green">green</span>. Click as fast as you can!</p>
+            <button class="btn btn--primary btn--lg" id="btn-start" type="button">Start</button>
+            <p class="state__hint">or press <kbd>Space</kbd></p>
+          </div>
+          <!-- Waiting -->
+          <div class="state hidden" id="state-waiting">
+            <p class="state__label">Wait for it&hellip;</p>
+            <p class="state__sublabel">Don't click yet!</p>
+          </div>
+          <!-- Go -->
+          <div class="state hidden" id="state-go">
+            <p class="state__label state__label--go">Click NOW!</p>
+          </div>
+          <!-- Result -->
+          <div class="state hidden" id="state-result">
+            <p class="result__label">Your time</p>
+            <p class="result__time">
+              <span class="result__ms" id="result-ms">0</span>
+              <span class="result__unit">ms</span>
+            </p>
+            <p class="result__badge hidden" id="result-badge">&#127942; New Personal Best!</p>
+            <button class="btn btn--primary" id="btn-retry" type="button">Try Again</button>
+            <p class="state__hint">or press <kbd>Space</kbd></p>
+          </div>
+          <!-- Too Early -->
+          <div class="state hidden" id="state-early">
+            <h2 class="state__title state__title--error">Too Early!</h2>
+            <p class="state__desc">You clicked before the stimulus appeared.</p>
+            <button class="btn btn--primary" id="btn-retry-early" type="button">Try Again</button>
+            <p class="state__hint">or press <kbd>Space</kbd></p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="stats" aria-label="Performance statistics">
+        <div class="stats__card stats__card--best">
+          <h3 class="stats__heading">Personal Best</h3>
+          <p class="stats__value stats__value--best" id="best-time">&mdash;</p>
+          <p class="stats__unit" id="best-unit"></p>
+        </div>
+        <div class="stats__card">
+          <h3 class="stats__heading">Average</h3>
+          <p class="stats__value" id="avg-time">&mdash;</p>
+          <p class="stats__unit" id="avg-unit"></p>
+        </div>
+        <div class="stats__card">
+          <h3 class="stats__heading">Attempts</h3>
+          <p class="stats__value" id="attempt-count">0</p>
+        </div>
+        <div class="stats__card stats__card--history">
+          <h3 class="stats__heading">Last 5 Attempts</h3>
+          <ol class="history" id="history-list" aria-label="Recent attempt history">
+            <li class="history__empty">No attempts yet</li>
+          </ol>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <p>CSS 3D Transforms &middot; Vanilla JS &middot; No Frameworks</p>
+    </footer>
+  </div>
+
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────────
+   Storage — window.storage API + memory fallback
+   ───────────────────────────────────────────── */
+var Storage = {
+  _mem: {},
+  get: function(key) {
+    var self = this;
+    try {
+      if (window.storage && typeof window.storage.get === 'function') {
+        return window.storage.get(key).then(function(r) {
+          return r ? r.value : null;
+        }).catch(function() { return self._mem[key] || null; });
+      }
+    } catch(e) {}
+    return Promise.resolve(self._mem[key] || null);
+  },
+  set: function(key, val) {
+    this._mem[key] = val;
+    try {
+      if (window.storage && typeof window.storage.set === 'function') {
+        window.storage.set(key, val).catch(function(){});
+      }
+    } catch(e) {}
+  }
+};
+
+/* ─────────────────────────────────────────────
+   Particles — spawn CSS-animated dots
+   ───────────────────────────────────────────── */
+(function() {
+  var container = document.getElementById('particles');
+  if (!container) return;
+  for (var i = 0; i < 30; i++) {
+    var p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDuration = (8 + Math.random() * 14) + 's';
+    p.style.animationDelay = (Math.random() * 12) + 's';
+    p.style.width = p.style.height = (2 + Math.random() * 3) + 'px';
+    container.appendChild(p);
+  }
+})();
+
+/* ─────────────────────────────────────────────
+   3D Shape Controller
+   ───────────────────────────────────────────── */
+var Shape3D = (function() {
+  var shape = document.getElementById('shape');
+  var glow  = document.getElementById('glow');
+
+  function setState(state) {
+    if (!shape) return;
+    shape.className = 'shape-wrap ' + state;
+    glow.className  = 'glow-core ' + state;
+  }
+
+  return { setState: setState };
+})();
+
+/* ─────────────────────────────────────────────
+   Stats Manager
+   ───────────────────────────────────────────── */
+var StatsManager = (function() {
+  var KEY = 'reflex-best';
+  var MAX = 5;
+  var bestTime = null;
+  var history = [];
+  var total = 0;
+
+  var bestEl   = document.getElementById('best-time');
+  var bestU    = document.getElementById('best-unit');
+  var avgEl    = document.getElementById('avg-time');
+  var avgU     = document.getElementById('avg-unit');
+  var countEl  = document.getElementById('attempt-count');
+  var listEl   = document.getElementById('history-list');
+  var bestCard = document.querySelector('.stats__card--best');
+
+  function init() {
+    Storage.get(KEY).then(function(val) {
+      if (val !== null) {
+        var n = parseInt(val, 10);
+        if (!isNaN(n) && n > 0) bestTime = n;
+      }
+      render();
+    }).catch(function() { render(); });
+  }
+
+  function record(ms) {
+    total++;
+    var isNew = false;
+    if (bestTime === null || ms < bestTime) {
+      bestTime = ms;
+      isNew = true;
+      Storage.set(KEY, String(ms));
+    }
+    history.unshift({ time: ms, early: false });
+    if (history.length > MAX) history.pop();
+    render();
+    return isNew;
+  }
+
+  function recordEarly() {
+    total++;
+    history.unshift({ time: null, early: true });
+    if (history.length > MAX) history.pop();
+    render();
+  }
+
+  function render() {
+    if (bestTime !== null) {
+      bestEl.textContent = bestTime;
+      bestU.textContent = 'ms';
+      bestCard.classList.add('has-best');
+    } else {
+      bestEl.textContent = '\u2014';
+      bestU.textContent = '';
+    }
+
+    var valid = [], sum = 0;
+    for (var i = 0; i < history.length; i++) {
+      if (!history[i].early) { valid.push(history[i].time); sum += history[i].time; }
+    }
+    if (valid.length > 0) {
+      avgEl.textContent = Math.round(sum / valid.length);
+      avgU.textContent = 'ms';
+    } else {
+      avgEl.textContent = '\u2014';
+      avgU.textContent = '';
+    }
+
+    countEl.textContent = total;
+
+    if (history.length === 0) {
+      listEl.innerHTML = '<li class="history__empty">No attempts yet</li>';
+    } else {
+      var html = '';
+      for (var j = 0; j < history.length; j++) {
+        var h = history[j];
+        if (h.early) {
+          html += '<li class="history__item history__item--early">Too early</li>';
+        } else {
+          var best = h.time === bestTime;
+          html += '<li class="history__item' + (best ? ' history__item--best' : '') + '">' + h.time + 'ms</li>';
+        }
+      }
+      listEl.innerHTML = html;
+    }
+  }
+
+  return { init: init, record: record, recordEarly: recordEarly };
+})();
+
+/* ─────────────────────────────────────────────
+   Game Controller — State Machine
+   ───────────────────────────────────────────── */
+var Game = (function() {
+  var S = { IDLE:'idle', WAITING:'waiting', GO:'go', RESULT:'result', EARLY:'early' };
+  var cur = S.IDLE;
+  var timer = null;
+  var stimT = 0;
+
+  var arena   = document.getElementById('arena');
+  var screens = {
+    idle:    document.getElementById('state-idle'),
+    waiting: document.getElementById('state-waiting'),
+    go:      document.getElementById('state-go'),
+    result:  document.getElementById('state-result'),
+    early:   document.getElementById('state-early')
+  };
+  var msEl    = document.getElementById('result-ms');
+  var badge   = document.getElementById('result-badge');
+  var btnS    = document.getElementById('btn-start');
+  var btnR    = document.getElementById('btn-retry');
+  var btnRE   = document.getElementById('btn-retry-early');
+
+  function show(state) {
+    var keys = ['idle','waiting','go','result','early'];
+    for (var i = 0; i < keys.length; i++) screens[keys[i]].classList.add('hidden');
+    screens[state].classList.remove('hidden');
+
+    arena.className = 'arena' + (state !== 'idle' ? ' arena--' + state : '');
+    cur = state;
+    Shape3D.setState(state);
+  }
+
+  function start() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    show(S.WAITING);
+    var delay = Math.random() * 2000 + 500;
+    timer = setTimeout(function() {
+      show(S.GO);
+      stimT = performance.now();
+    }, delay);
+  }
+
+  function click() {
+    if (cur === S.WAITING) {
+      clearTimeout(timer); timer = null;
+      StatsManager.recordEarly();
+      show(S.EARLY);
+    } else if (cur === S.GO) {
+      var ms = Math.round(performance.now() - stimT);
+      var isNew = StatsManager.record(ms);
+      msEl.textContent = ms;
+      if (isNew) badge.classList.remove('hidden');
+      else badge.classList.add('hidden');
+      show(S.RESULT);
+    }
+  }
+
+  function init() {
+    btnS.addEventListener('click',  function(e) { e.stopPropagation(); start(); });
+    btnR.addEventListener('click',  function(e) { e.stopPropagation(); start(); });
+    btnRE.addEventListener('click', function(e) { e.stopPropagation(); start(); });
+    arena.addEventListener('click', click);
+
+    document.addEventListener('keydown', function(e) {
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        if (cur === S.IDLE || cur === S.RESULT || cur === S.EARLY) start();
+        else if (cur === S.WAITING || cur === S.GO) click();
+      }
+    });
+
+    show(S.IDLE);
+  }
+
+  return { init: init };
+})();
+
+/* ── Boot ── */
+(function() {
+  function boot() {
+    StatsManager.init();
+    Game.init();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
