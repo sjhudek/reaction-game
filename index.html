@@ -159,6 +159,11 @@ kbd{display:inline-block;padding:2px 8px;font-family:var(--font-mono);font-size:
 .score-guide__range{font-family:var(--font-mono);font-size:.72rem;color:var(--text-dim)}
 .score-guide__label{color:var(--text-secondary)}
 
+.reset-row{display:flex;justify-content:center;margin-top:1rem;width:100%}
+.btn--reset{font-family:var(--font-sans);font-size:.9rem;font-weight:700;color:#fff;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:var(--radius-md);padding:.65rem 2rem;cursor:pointer;transition:all .2s var(--ease-out);-webkit-tap-highlight-color:transparent}
+.btn--reset:hover{color:#fff;border-color:rgba(16,185,129,0.5);background:rgba(16,185,129,0.25)}
+.btn--reset:active{transform:scale(0.97)}
+
 .footer{margin-top:auto;padding:2rem 0 .5rem;text-align:center;font-size:.8rem;color:var(--text-dim)}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -262,6 +267,10 @@ kbd{display:inline-block;padding:2px 8px;font-family:var(--font-mono);font-size:
           </div>
         </div>
       </section>
+
+      <div class="reset-row">
+        <button class="btn--reset" id="btn-reset" type="button">Reset Stats</button>
+      </div>
 
       <aside class="stats" aria-label="Performance statistics">
         <div class="stats__card stats__card--best">
@@ -446,7 +455,12 @@ var StatsManager = (function() {
     }
   }
 
-  return { init: init, record: record, recordEarly: recordEarly };
+  return { init: init, record: record, recordEarly: recordEarly, reset: function() {
+    bestTime = null; history = []; total = 0;
+    bestCard.classList.remove('has-best');
+    Storage.set(KEY, '');
+    render();
+  }};
 })();
 
 /* ── Game Controller ── */
@@ -537,7 +551,12 @@ var Game = (function() {
 
 /* ── Boot ── */
 (function() {
-  function boot() { StatsManager.init(); Game.init(); }
+  function boot() {
+    StatsManager.init(); Game.init();
+    document.getElementById('btn-reset').addEventListener('click', function() {
+      StatsManager.reset();
+    });
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
